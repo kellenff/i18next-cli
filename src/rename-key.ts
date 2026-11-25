@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import type { I18nextToolkitConfig, Logger, RenameKeyResult } from './types.js'
 import { ConsoleLogger } from './utils/logger.js'
 import { loadTranslationFile, serializeTranslationFile, getOutputPath, getNamespaceFromOutputPath } from './utils/file-utils.js'
-import { findSourceFiles } from './utils/source-files.js'
+import { findWritableSourceFiles } from './utils/source-files.js'
 import { getNestedValue, setNestedValue, naturalLanguageRegexFor, storedKeySeparator } from './utils/nested-object.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 import { styleText } from 'node:util'
@@ -296,8 +296,8 @@ async function updateSourceFiles (
   namespaceKeyMap: Map<string, Set<string>>,
   logger: Logger
 ): Promise<Array<{ path: string; changes: number }>> {
-  // The files extract reads keys from, so a key is renamed wherever it was extracted
-  const sourceFiles = await findSourceFiles(config)
+  // The files extract reads keys from, except node_modules, which is not the project's code to rewrite
+  const sourceFiles = await findWritableSourceFiles(config)
 
   const results: Array<{ path: string; changes: number }> = []
 

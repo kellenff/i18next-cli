@@ -7,12 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-- fix: every command reads the source files `extract` reads. `lint`, `instrument`, `rename-key` and the `extract`,
-  `lint` and `types` watchers skipped `node_modules` even when an `extract.input` pattern named it, so a package
-  whose keys were extracted (its sources, or a dependency's `.d.ts` for the type-aware resolver) was not linted, and
-  `rename-key` did not rename its keys there. The rule is now one for all: `node_modules` is skipped, at any depth,
-  unless an input pattern mentions it; then `extract.ignore`; then what a command adds (`lint.ignore`, the stories,
-  mocks and fixtures `instrument` leaves alone).
+- fix: `lint` and the `extract` and `lint` watchers read the source files `extract` reads. They skipped
+  `node_modules` even when an `extract.input` pattern named it, so a package whose keys were extracted (its sources,
+  or a dependency's `.d.ts` for the type-aware resolver) was not linted, and a change to it did not re-run
+  `extract --watch`. The rule is now one for all: `node_modules` is skipped, at any depth, unless an input pattern
+  mentions it; then `extract.ignore`; then what a command adds (`lint.ignore`). `instrument` and `rename-key`, which
+  rewrite source files, still never touch `node_modules`, now also a nested one (`packages/app/node_modules`).
 - fix(lint): `lint --watch` applies `lint.ignore`, as `lint` does.
 - fix(types): `types` skips `node_modules` unless `types.input` mentions it, and `types --watch` watches the files
   `types` reads; it applied `extract.ignore`, which often lists the translation files themselves, and then watched

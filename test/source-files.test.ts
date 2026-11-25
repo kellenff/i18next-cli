@@ -1,10 +1,10 @@
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { findKeys, Linter, runRenameKey, runInstrumenter } from '../src/index'
 import type { I18nextToolkitConfig, Logger } from '../src/index'
-import { defaultIgnore, findSourceFiles, findTypesInputFiles, ignoreMatcher, sourceIgnore } from '../src/utils/source-files'
+import { defaultIgnore, findSourceFiles, findTypesInputFiles, findWritableSourceFiles, ignoreMatcher, sourceIgnore } from '../src/utils/source-files'
 
 const silent: Logger = { info () {}, warn () {}, error () {} }
 
@@ -81,7 +81,17 @@ describe('source files: one ignore rule for every command', () => {
     })
   })
 
-  describe('every command reads the files extract reads', () => {
+  describe('findWritableSourceFiles', () => {
+    it('never returns a file in node_modules, even when an input pattern names it', async () => {
+      expect(await findWritableSourceFiles(config(['**/*.tsx', ...withPackage]))).toEqual([
+        'packages/app/src/Page.tsx',
+        'src/App.tsx',
+        'src/legacy/Old.tsx',
+      ])
+    })
+  })
+
+  describe('every reading command reads the files extract reads', () => {
     it('extract (and status, which uses findKeys) finds the keys in node_modules', async () => {
       const { allKeys } = await findKeys(config(withPackage), silent)
       const keys = [...allKeys.values()].map(k => k.key).sort()
@@ -100,17 +110,25 @@ describe('source files: one ignore rule for every command', () => {
       const { files: issues } = await new Linter(cfg, silent).run()
       expect(Object.keys(issues)).toEqual(['src/Hardcoded.tsx'])
     })
+  })
 
-    it('rename-key renames a key in node_modules sources it was extracted from', async () => {
+  describe('the commands that rewrite source files leave node_modules alone', () => {
+    it('rename-key renames in the project, not in a package an input pattern names', async () => {
       await writeFile(join(dir, 'locales/en/translation.json'), JSON.stringify({ acme: { button: 'Click' } }))
-      const result = await runRenameKey(config(withPackage), 'acme.button', 'acme.cta', { dryRun: true }, silent)
+      await writeFile(join(dir, 'src/Cta.tsx'), "export const Cta = () => <p>{t('acme.button')}</p>\n")
+      const result = await runRenameKey(config(withPackage), 'acme.button', 'acme.cta', {}, silent)
       expect(result.success).toBe(true)
-      expect(result.sourceFiles.map(f => f.path)).toEqual(['node_modules/@acme/ui/src/Button.tsx'])
+      expect(result.sourceFiles.map(f => f.path)).toEqual(['src/Cta.tsx'])
+      expect(await readFile(join(dir, 'src/Cta.tsx'), 'utf-8')).toContain("t('acme.cta')")
+      expect(await readFile(join(dir, 'node_modules/@acme/ui/src/Button.tsx'), 'utf-8')).toBe(files['node_modules/@acme/ui/src/Button.tsx'])
     })
 
-    it('instrument reads the same files, minus its own defaults', async () => {
+    it('instrument rewrites the project, not a package an input pattern names', async () => {
+      await writeFile(join(dir, 'src/Hello.tsx'), 'export const Hello = () => <p>Hello there friend</p>\n')
       const results = await runInstrumenter(config(withPackage), { isDryRun: true, quiet: true }, silent)
-      expect(results.files.map(f => f.file)).toContain('node_modules/@acme/ui/src/Hardcoded.tsx')
+      const instrumented = results.files.map(f => f.file)
+      expect(instrumented).toContain('src/Hello.tsx')
+      expect(instrumented.filter(f => f.includes('node_modules'))).toEqual([])
     })
   })
 

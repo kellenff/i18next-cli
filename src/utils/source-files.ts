@@ -21,9 +21,9 @@ export function defaultIgnore (input: Patterns): string[] {
 }
 
 /**
- * The globs every command that reads the source files of `extract.input` skips, so `extract`, `status`, `lint`,
- * `instrument` and `rename-key` (and their watchers) read the same files: the default ignore, `extract.ignore`,
- * then what the command adds (`lint.ignore`, the stories and fixtures `instrument` leaves alone).
+ * The globs every command that reads the source files of `extract.input` skips, so `extract`, `status` and `lint`
+ * (and their watchers) read the same files: the default ignore, `extract.ignore`, then what the command adds
+ * (`lint.ignore`). The commands that rewrite source files go through {@link findWritableSourceFiles}.
  */
 export function sourceIgnore (config: Pick<I18nextToolkitConfig, 'extract'>, ...extra: Patterns[]): string[] {
   return [...defaultIgnore(config.extract.input), ...toArray(config.extract.ignore), ...extra.flatMap(toArray)]
@@ -48,6 +48,15 @@ export async function findTypesInputFiles (input: string | string[]): Promise<st
 /** The source files of `extract.input`, minus {@link sourceIgnore} (with `extraIgnore`) */
 export async function findSourceFiles (config: Pick<I18nextToolkitConfig, 'extract'>, ...extraIgnore: Patterns[]): Promise<string[]> {
   return globFiles(config.extract.input, sourceIgnore(config, ...extraIgnore))
+}
+
+/**
+ * The source files `instrument` and `rename-key` may rewrite: those of {@link findSourceFiles}, but never one in
+ * `node_modules`, even when an input pattern names it to read a package's keys or types. A dependency is not the
+ * project's code to change, and a reinstall would undo the change anyway.
+ */
+export async function findWritableSourceFiles (config: Pick<I18nextToolkitConfig, 'extract'>, ...extraIgnore: Patterns[]): Promise<string[]> {
+  return findSourceFiles(config, NODE_MODULES_IGNORE, ...extraIgnore)
 }
 
 /**

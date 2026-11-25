@@ -14,7 +14,7 @@ import { ConsoleLogger } from '../../utils/logger.js'
 import { ignoredAttributeSet, ignoredTags, importAliases, jsxElementName, resolveElementAttributes, translatableAttributeSet, translatablePropertySet } from '../../utils/jsx-attributes.js'
 import { normalizeSpansToCharIndices, collectIgnoredLineRanges } from '../../extractor/parsers/ast-utils.js'
 import { getOutputPath, isWorkspaceRoot, readProjectDeps } from '../../utils/file-utils.js'
-import { findSourceFiles } from '../../utils/source-files.js'
+import { findWritableSourceFiles } from '../../utils/source-files.js'
 import { findKeys } from '../../extractor/core/key-finder.js'
 import { matchesFunctionPattern } from '../../extractor/utils/function-matcher.js'
 import { classifyNextFiles, projectPath, type NextFileKind } from './next-files.js'
@@ -3284,9 +3284,9 @@ function getCalleeName (callee: any): string | null {
  * Gets the list of source files to instrument.
  */
 async function getSourceFilesForInstrumentation (config: I18nextToolkitConfig): Promise<string[]> {
-  // The files extract reads, minus build output and the stories, mocks and fixtures that hold sample data, not the
-  // app's texts
-  return await findSourceFiles(config, [
+  // The files extract reads, except node_modules (not the project's code to rewrite), build output, and the
+  // stories, mocks and fixtures that hold sample data, not the app's texts
+  return await findWritableSourceFiles(config, [
     'dist/**', 'build/**', '.next/**',
     '**/*.{stories,story,storybook}.*', '**/__mocks__/**', '**/__fixtures__/**', '**/__tests__/**'
   ])

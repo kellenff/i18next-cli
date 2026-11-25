@@ -40,8 +40,8 @@ export interface I18nextToolkitConfig {
      * `node_modules` (at any depth) is skipped unless one of these patterns mentions it. Add e.g.
      * `'node_modules/@acme/api-sdk/dist/*.d.ts'` to let the type-aware resolver expand
      * string unions and enums declared by a dependency, or point at a package's sources
-     * to extract the keys it ships. Every command that reads source files (`extract`, `status`,
-     * `lint`, `instrument`, `rename-key` and the watchers) reads the same files.
+     * to extract the keys it ships. `extract`, `status`, `lint` and their watchers read the same
+     * files; `instrument` and `rename-key`, which rewrite source files, never touch `node_modules`.
      */
     input: string | string[];
 
