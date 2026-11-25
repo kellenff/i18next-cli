@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import type { I18nextToolkitConfig, Logger, RenameKeyResult } from './types.js'
 import { ConsoleLogger } from './utils/logger.js'
 import { loadTranslationFile, serializeTranslationFile, getOutputPath, getNamespaceFromOutputPath } from './utils/file-utils.js'
+import { findSourceFiles } from './utils/source-files.js'
 import { getNestedValue, setNestedValue, naturalLanguageRegexFor, storedKeySeparator } from './utils/nested-object.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 import { styleText } from 'node:util'
@@ -295,25 +296,8 @@ async function updateSourceFiles (
   namespaceKeyMap: Map<string, Set<string>>,
   logger: Logger
 ): Promise<Array<{ path: string; changes: number }>> {
-  const defaultIgnore = ['node_modules/**']
-  const userIgnore = Array.isArray(config.extract.ignore)
-    ? config.extract.ignore
-    : config.extract.ignore ? [config.extract.ignore] : []
-
-  // Normalize input patterns for cross-platform compatibility
-  const inputPatterns = Array.isArray(config.extract.input)
-    ? config.extract.input
-    : [config.extract.input]
-
-  const normalizedPatterns = inputPatterns.map(pattern =>
-    pattern.replace(/\\/g, '/')
-  )
-
-  // glob accepts array of patterns; do not force cwd to avoid accidental path rewriting
-  const sourceFiles = await glob(normalizedPatterns, {
-    ignore: [...defaultIgnore, ...userIgnore],
-    nodir: true
-  })
+  // The files extract reads keys from, so a key is renamed wherever it was extracted
+  const sourceFiles = await findSourceFiles(config)
 
   const results: Array<{ path: string; changes: number }> = []
 

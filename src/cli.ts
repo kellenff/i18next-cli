@@ -2,7 +2,6 @@
 
 import { Command } from 'commander'
 import chokidar from 'chokidar'
-import { glob } from 'glob'
 import { minimatch } from 'minimatch'
 import { styleText } from 'node:util'
 import { loadConfig, ensureConfig } from './config.js'
@@ -19,6 +18,7 @@ import { runRenameKey } from './rename-key.js'
 import { runInstrumenter } from './instrumenter/index.js'
 import { runLocalize } from './localize/index.js'
 import { getNestedKeys, getNestedValue } from './utils/nested-object.js'
+import { findSourceFiles, findTypesInputFiles, ignoreMatcher, sourceIgnore } from './utils/source-files.js'
 import type { I18nextToolkitConfig, TranslationResult } from './types.js'
 
 const program = new Command()
@@ -88,21 +88,19 @@ program
       // If in watch mode, set up the chokidar watcher
       if (options.watch) {
         console.log('\nWatching for changes...')
-        // build ignore list (configured + derived from output template)
-        const configuredIgnore = toArray(config.extract.ignore)
-        const derivedIgnore = deriveOutputIgnore(config.extract.output)
-        const ignoreGlobs = [...configuredIgnore, ...derivedIgnore].filter(Boolean)
+        // What extract skips (node_modules unless an input pattern names it, extract.ignore), and
+        // the files it writes, so its own output does not trigger another run
+        const isIgnored = ignoreMatcher([...sourceIgnore(config), ...deriveOutputIgnore(config.extract.output)])
         // Watch the static base folder of each input glob, not the files that exist at
         // startup, so files created later are extracted and deleted ones drop their keys.
         const inputGlobs: string[] = toArray(config.extract.input).map((g: string) => g.replace(/^\.\//, ''))
         const isInput = (file: string) => {
           const f = file.replace(/\\/g, '/')
-          return inputGlobs.some(g => minimatch(f, g, { dot: true })) &&
-            !ignoreGlobs.some(g => minimatch(f, g, { dot: true }))
+          return inputGlobs.some(g => minimatch(f, g, { dot: true })) && !isIgnored(f)
         }
 
         const watcher = chokidar.watch(Array.from(new Set(inputGlobs.flatMap(globBases))), {
-          ignored: (path, stats) => /node_modules/.test(path) || (!!stats?.isFile() && !isInput(path)),
+          ignored: (path, stats) => isIgnored(path) || (!!stats?.isFile() && !isInput(path)),
           ignoreInitial: true,
           persistent: true,
         })
@@ -198,9 +196,9 @@ program
 
     if (options.watch) {
       console.log('\nWatching for changes...')
-      const expandedTypes = await expandGlobs(config.types?.input || [])
-      const ignoredTypes = [...toArray(config.extract?.ignore)].filter(Boolean)
-      const watchTypes = expandedTypes.filter(f => !ignoredTypes.some(g => minimatch(f, g, { dot: true })))
+      // The files the generator reads. extract.ignore is about source files: it often lists the
+      // translation files themselves, so extract does not parse them
+      const watchTypes = await findTypesInputFiles(config.types?.input || [])
       // awaitWriteFinish avoids triggering mid-write when another process (e.g. `extract -w`)
       // is rewriting the same translation files. See i18next/i18next-cli#257.
       const watcher = chokidar.watch(watchTypes, {
@@ -301,14 +299,11 @@ program
       // Re-load the config to get the correct input paths for the watcher
       const config = await loadConfig(cfgPath)
       if (config?.extract?.input) {
-        const expandedLint = await expandGlobs(config.extract.input)
-        const configuredIgnore2 = toArray(config.extract.ignore)
-        const derivedIgnore2 = deriveOutputIgnore(config.extract.output)
-        const ignoredLint = [...configuredIgnore2, ...derivedIgnore2].filter(Boolean)
-        const watchLint = expandedLint.filter(f => !ignoredLint.some(g => minimatch(f, g, { dot: true })))
+        // The files lint reads (lint.ignore included), minus the translation files extract writes
+        const isOutput = ignoreMatcher(deriveOutputIgnore(config.extract.output))
+        const watchLint = (await findSourceFiles(config, config.lint?.ignore)).filter(f => !isOutput(f))
 
         const watcher = chokidar.watch(watchLint, {
-          ignored: /node_modules/,
           persistent: true,
         })
         watcher.on('change', path => {
@@ -502,12 +497,6 @@ const globBases = (pattern: string): string[] => {
     parts.push(segment)
   }
   return [parts.join('/') || '.']
-}
-// helper to expand one or many glob patterns
-const expandGlobs = async (patterns: string | string[] = []) => {
-  const arr = toArray(patterns)
-  const sets = await Promise.all(arr.map(p => glob(p || '', { nodir: true })))
-  return Array.from(new Set(sets.flat()))
 }
 
 function printCiDiff (results: TranslationResult[], config: I18nextToolkitConfig): void {

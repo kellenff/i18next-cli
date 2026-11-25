@@ -1,4 +1,3 @@
-import { glob } from 'glob'
 import type { Expression } from '@swc/core'
 import type { ExtractedKey, Logger, I18nextToolkitConfig, ASTVisitorHooks } from '../../types.js'
 import { processFile, preScanFile } from './extractor.js'
@@ -7,6 +6,7 @@ import { initializePlugins, createPluginContext, ConflictError } from '../plugin
 import { ASTVisitors } from './ast-visitors.js'
 import { ExpressionResolver } from '../parsers/expression-resolver.js'
 import { getTsConfigAliases } from '../../config.js'
+import { findSourceFiles } from '../../utils/source-files.js'
 
 /**
  * Main function for finding translation keys across all source files in a project.
@@ -44,7 +44,7 @@ export async function findKeys (
   const { plugins: pluginsOrUndefined, ...otherConfig } = config
   const plugins = pluginsOrUndefined || []
 
-  const sourceFiles = await processSourceFiles(config)
+  const sourceFiles = await findSourceFiles(config)
   const allKeys = new Map<string, ExtractedKey>()
 
   // 1. Create the base context with config and logger.
@@ -140,39 +140,4 @@ export async function findKeys (
     }
   }
   return { allKeys, objectKeys: astVisitors.objectKeys, keepPatterns: astVisitors.keepPatterns }
-}
-
-/**
- * Processes source files using glob patterns from configuration.
- * Excludes node_modules by default and resolves relative to current working directory.
- *
- * @param config - The i18next toolkit configuration object
- * @returns Promise resolving to array of file paths to process
- *
- * @internal
- */
-async function processSourceFiles (config: I18nextToolkitConfig): Promise<string[]> {
-  // `node_modules` is ignored by default, but a user who explicitly globs into it
-  // means it, either to extract from a package that ships translatable sources
-  // (#213) or to let the type-aware resolver read a dependency's `.d.ts` (#294).
-  const inputPatterns = Array.isArray(config.extract.input) ? config.extract.input : [config.extract.input]
-  const defaultIgnore = inputPatterns.some(p => typeof p === 'string' && p.includes('node_modules'))
-    ? []
-    : ['node_modules/**']
-
-  // Normalize the user's ignore option into an array
-  const userIgnore = Array.isArray(config.extract.ignore)
-    ? config.extract.ignore
-    : config.extract.ignore ? [config.extract.ignore] : []
-
-  const files = await glob(config.extract.input, {
-    // Combine default ignore patterns with user-configured ones
-    ignore: [...defaultIgnore, ...userIgnore],
-    cwd: process.cwd(),
-    // A directory named e.g. `abc.tsx` matches the input globs
-    nodir: true,
-  })
-  // glob's order is not stable across runs, and when two call sites give one key
-  // different defaults the file visited first wins, so sort for reproducible output (#296)
-  return files.sort()
 }

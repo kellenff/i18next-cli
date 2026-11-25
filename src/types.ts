@@ -37,14 +37,18 @@ export interface I18nextToolkitConfig {
     /**
      * Glob pattern(s) for source files to scan for translation keys.
      *
-     * `node_modules` is skipped unless one of these patterns mentions it. Add e.g.
+     * `node_modules` (at any depth) is skipped unless one of these patterns mentions it. Add e.g.
      * `'node_modules/@acme/api-sdk/dist/*.d.ts'` to let the type-aware resolver expand
      * string unions and enums declared by a dependency, or point at a package's sources
-     * to extract the keys it ships.
+     * to extract the keys it ships. Every command that reads source files (`extract`, `status`,
+     * `lint`, `instrument`, `rename-key` and the watchers) reads the same files.
      */
     input: string | string[];
 
-    /** Glob pattern(s) for files to ignore during extraction */
+    /**
+     * Glob pattern(s) for source files to ignore. Applies to every command that reads
+     * `input`: `extract`, `status`, `lint`, `instrument` and `rename-key`.
+     */
     ignore?: string | string[];
 
     /** Output path template with placeholders: {{language}} for locale, {{namespace}} for namespace */
@@ -439,7 +443,8 @@ export interface I18nextToolkitConfig {
   /** Configuration options for TypeScript type generation */
   types?: {
     /**
-     * Glob pattern(s) for translation files to generate types from.
+     * Glob pattern(s) for translation files to generate types from. `node_modules` is skipped
+     * unless one of these patterns mentions it, as for `extract.input`; `extract.ignore` does not apply.
      *
      * @example
      * // Flat namespaces (filename only)

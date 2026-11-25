@@ -1,5 +1,4 @@
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
-import { glob } from 'glob'
 import { extname, dirname, join, relative, resolve, isAbsolute } from 'node:path'
 import { parse } from '@swc/core'
 import type { Module } from '@swc/types'
@@ -15,6 +14,7 @@ import { ConsoleLogger } from '../../utils/logger.js'
 import { ignoredAttributeSet, ignoredTags, importAliases, jsxElementName, resolveElementAttributes, translatableAttributeSet, translatablePropertySet } from '../../utils/jsx-attributes.js'
 import { normalizeSpansToCharIndices, collectIgnoredLineRanges } from '../../extractor/parsers/ast-utils.js'
 import { getOutputPath, isWorkspaceRoot, readProjectDeps } from '../../utils/file-utils.js'
+import { findSourceFiles } from '../../utils/source-files.js'
 import { findKeys } from '../../extractor/core/key-finder.js'
 import { matchesFunctionPattern } from '../../extractor/utils/function-matcher.js'
 import { classifyNextFiles, projectPath, type NextFileKind } from './next-files.js'
@@ -3284,22 +3284,12 @@ function getCalleeName (callee: any): string | null {
  * Gets the list of source files to instrument.
  */
 async function getSourceFilesForInstrumentation (config: I18nextToolkitConfig): Promise<string[]> {
-  // Stories, mocks and fixtures hold sample data, not the app's texts
-  const defaultIgnore = [
-    'node_modules/**', 'dist/**', 'build/**', '.next/**',
+  // The files extract reads, minus build output and the stories, mocks and fixtures that hold sample data, not the
+  // app's texts
+  return await findSourceFiles(config, [
+    'dist/**', 'build/**', '.next/**',
     '**/*.{stories,story,storybook}.*', '**/__mocks__/**', '**/__fixtures__/**', '**/__tests__/**'
-  ]
-
-  const userIgnore = Array.isArray(config.extract.ignore)
-    ? config.extract.ignore
-    : config.extract.ignore ? [config.extract.ignore] : []
-
-  return await glob(config.extract.input, {
-    ignore: [...defaultIgnore, ...userIgnore],
-    cwd: process.cwd(),
-    // A directory named e.g. `abc.tsx` matches the input globs
-    nodir: true
-  })
+  ])
 }
 
 /**

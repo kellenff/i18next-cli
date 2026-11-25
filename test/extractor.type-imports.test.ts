@@ -200,7 +200,7 @@ describe('extractor: type-aware resolution across imports (issue #294)', () => {
         // Reproduce glob's filtering so the default ignore is actually exercised
         const all = ['/node_modules/@acme/api-sdk/dist/index.d.ts', '/src/App.tsx']
         const ignore: string[] = options?.ignore ?? []
-        return ignore.includes('node_modules/**')
+        return ignore.includes('**/node_modules/**')
           ? all.filter(p => !p.includes('node_modules'))
           : all
       })
@@ -241,7 +241,7 @@ describe('extractor: type-aware resolution across imports (issue #294)', () => {
       })
 
       const keys = await extractKeys()
-      expect(sourceGlobIgnore).toContain('node_modules/**')
+      expect(sourceGlobIgnore).toContain('**/node_modules/**')
       // The union is unresolvable, so nothing is written at all
       expect(keys).toBeUndefined()
     })

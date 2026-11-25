@@ -386,6 +386,86 @@ describe('CLI command parsing and dispatching', () => {
     expect(calledOptions.ignored('src/i18n', dir)).toBe(false)
   })
 
+  it('extract --watch follows node_modules when an input pattern names it, as extract does', async () => {
+    vi.resetModules()
+    const mockWatch = (await import('chokidar')).watch as any
+
+    process.argv = ['node', 'cli.ts', 'extract', '--watch']
+    mockEnsureConfig.mockResolvedValue({
+      locales: ['en'],
+      extract: {
+        input: ['src/**/*.tsx', 'node_modules/@acme/ui/src/**/*.tsx'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+      }
+    })
+    mockRunExtractor.mockResolvedValue({ anyFileUpdated: false, hasErrors: false })
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    const [watchedPaths, calledOptions] = mockWatch.mock.calls[0]
+    expect(watchedPaths).toEqual(['src', 'node_modules/@acme/ui/src'])
+    const file = { isFile: () => true }
+    const dir = { isFile: () => false }
+    expect(calledOptions.ignored('node_modules/@acme/ui/src', dir)).toBe(false)
+    expect(calledOptions.ignored('node_modules/@acme/ui/src/Button.tsx', file)).toBe(false)
+    expect(calledOptions.ignored('node_modules/other/index.tsx', file)).toBe(true)
+  })
+
+  it('lint --watch watches the files lint reads: lint.ignore applies, node_modules when named', async () => {
+    vi.resetModules()
+    const mockWatch = (await import('chokidar')).watch as any
+    const mockGlob = (await import('glob')).glob as any
+    const { minimatch } = await import('minimatch')
+    const all = [
+      'src/App.tsx',
+      'src/admin/Panel.tsx',
+      'src/legacy/Old.tsx',
+      'src/locales/en/translation.ts',
+      'node_modules/@acme/ui/src/Button.tsx',
+    ]
+    // Reproduce glob's filtering so the ignore list is actually exercised
+    mockGlob.mockImplementation(async (_patterns: any, options: any) =>
+      all.filter(f => !(options?.ignore ?? []).some((g: string) => minimatch(f, g, { dot: true }))))
+
+    process.argv = ['node', 'cli.ts', 'lint', '--watch']
+    mockLoadConfig.mockResolvedValue({
+      locales: ['en'],
+      extract: {
+        input: ['src/**/*.{ts,tsx}', 'node_modules/@acme/ui/src/**/*.tsx'],
+        ignore: ['src/legacy/**'],
+        output: 'src/locales/{{language}}/{{namespace}}.ts',
+      },
+      lint: { ignore: ['src/admin/**'] },
+    })
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockWatch).toHaveBeenCalledTimes(1)
+    expect(mockWatch.mock.calls[0][0]).toEqual(['node_modules/@acme/ui/src/Button.tsx', 'src/App.tsx'])
+  })
+
+  it('types --watch watches every types.input file, also those extract.ignore lists', async () => {
+    vi.resetModules()
+    const mockWatch = (await import('chokidar')).watch as any
+    const mockGlob = (await import('glob')).glob as any
+    mockGlob.mockResolvedValue(['src/i18n/locales/en/translation.ts'])
+
+    process.argv = ['node', 'cli.ts', 'types', '--watch']
+    mockEnsureConfig.mockResolvedValue({
+      // extract must not parse its own TypeScript output
+      extract: { input: ['src/**/*.ts'], ignore: ['src/i18n/locales/**'] },
+      types: { input: ['src/i18n/locales/en/*.ts'] },
+    })
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockGlob).toHaveBeenCalledWith(['src/i18n/locales/en/*.ts'], expect.objectContaining({ ignore: ['**/node_modules/**'] }))
+    expect(mockWatch.mock.calls[0][0]).toEqual(['src/i18n/locales/en/translation.ts'])
+  })
+
   it('watch mode should re-extract when input files are added, changed or removed', async () => {
     vi.resetModules()
     const mockWatch = (await import('chokidar')).watch as any

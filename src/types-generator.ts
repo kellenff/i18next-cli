@@ -1,6 +1,5 @@
 import { ConsoleLogger } from './utils/logger.js'
 import { mergeResourcesAsInterface } from 'i18next-resources-for-ts'
-import { glob } from 'glob'
 import { createSpinnerLike } from './utils/wrap-ora.js'
 import { styleText } from 'node:util'
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
@@ -8,6 +7,7 @@ import { basename, extname, resolve, dirname, join, relative } from 'node:path'
 import { transform } from '@swc/core'
 import type { I18nextToolkitConfig, Logger } from './types.js'
 import { getOutputPath } from './utils/file-utils.js'
+import { findTypesInputFiles } from './utils/source-files.js'
 import { JsonParser, JsonObjectNode } from '@croct/json5-parser'
 import yaml from 'yaml'
 import vm from 'node:vm'
@@ -147,7 +147,8 @@ export async function runTypesGenerator (
       return { changed: false, changedFiles: [] }
     }
 
-    const resourceFiles = await glob(config.types.input, { cwd: process.cwd() })
+    // node_modules is skipped unless types.input names it, as for every command's input
+    const resourceFiles = await findTypesInputFiles(config.types.input)
     const basePath = config.types.basePath ? getOutputPath(config.types.basePath, config.extract.primaryLanguage) : undefined
 
     const resources: Resource[] = []

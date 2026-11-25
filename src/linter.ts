@@ -1,4 +1,3 @@
-import { glob } from 'glob'
 import { readFile } from 'node:fs/promises'
 import { parse } from '@swc/core'
 import { extname, relative } from 'node:path'
@@ -14,6 +13,7 @@ import { ASTVisitors } from './extractor/core/ast-visitors.js'
 import { nativeExtensions, warnUnhandledFile } from './extractor/core/extractor.js'
 import { getNestedValue } from './utils/nested-object.js'
 import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
+import { findSourceFiles } from './utils/source-files.js'
 import { parse as parseHtml, type ASTNode } from 'html-parse-stringify'
 import type { JSXElementChild } from '@swc/core'
 import { loadMessageAnalyzer, lintMessageFormatResources, lintI18nextResources, interpolationNames, type MessageAnalyzer } from './utils/message-format.js'
@@ -675,19 +675,8 @@ export class Linter extends EventEmitter<LinterEventMap> {
     const { config } = this
     try {
       this.emit('progress', { message: 'Finding source files to analyze...' })
-      const defaultIgnore = ['node_modules/**']
-      const extractIgnore = Array.isArray(config.extract.ignore)
-        ? config.extract.ignore
-        : config.extract.ignore ? [config.extract.ignore] : []
-      const lintIgnore = Array.isArray(config.lint?.ignore)
-        ? config.lint.ignore
-        : config.lint?.ignore ? [config.lint.ignore] : []
-
-      const sourceFiles = await glob(config.extract.input, {
-        ignore: [...defaultIgnore, ...extractIgnore, ...lintIgnore],
-        // A directory named e.g. `abc.tsx` matches the input globs; reading it throws EISDIR
-        nodir: true
-      })
+      // The files extract reads (node_modules too, when an input pattern names it), minus `lint.ignore`
+      const sourceFiles = await findSourceFiles(config, config.lint?.ignore)
       this.emit('progress', { message: `Analyzing ${sourceFiles.length} source files...` })
       // The primary language's translations, read once per file, so the interpolation and <Trans> checks
       // look at the translated string of a key, not at the key
