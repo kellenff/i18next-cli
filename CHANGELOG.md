@@ -10,13 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix: `lint` and the `extract` and `lint` watchers read the source files `extract` reads. They skipped
   `node_modules` even when an `extract.input` pattern named it, so a package whose keys were extracted (its sources,
   or a dependency's `.d.ts` for the type-aware resolver) was not linted, and a change to it did not re-run
-  `extract --watch`. The rule is now one for all: `node_modules` is skipped, at any depth, unless an input pattern
-  mentions it; then `extract.ignore`; then what a command adds (`lint.ignore`). `instrument` and `rename-key`, which
-  rewrite source files, still never touch `node_modules`, now also a nested one (`packages/app/node_modules`).
+  `extract --watch`. One rule for all now: the working directory's `node_modules` is skipped, except by a pattern
+  that names it, then `extract.ignore`, then what a command adds (`lint.ignore`).
+- fix(extract): a pattern that names `node_modules` reads in it, the others do not. With
+  `['**/*.tsx', 'node_modules/@acme/ui/src/**/*.tsx']`, `**/*.tsx` read every package in `node_modules`. A negated
+  pattern (`!**/node_modules/**`, as i18next-parser configs have) reads nothing and no longer counts as naming it.
+- fix(extract): `extract --watch` reacts to every file `extract` reads and does not walk folders that hold none of
+  them: an ignore pattern like `src/legacy` or `src/generated/*` skips no file below it, as for `extract`, and a
+  folder no input pattern can reach (a package's `node_modules` beside its `src`) is not watched.
+- fix: `instrument` and `rename-key`, which rewrite source files, never touch a file in a `node_modules` folder, now
+  also a nested one or one outside the working directory (`../shared/node_modules`). `rename-key` refuses to rename
+  a key that a file in `node_modules` uses, as `extract` would add the old key back from it and drop the renamed one
+  with its translations.
 - fix(lint): `lint --watch` applies `lint.ignore`, as `lint` does.
-- fix(types): `types` skips `node_modules` unless `types.input` mentions it, and `types --watch` watches the files
-  `types` reads; it applied `extract.ignore`, which often lists the translation files themselves, and then watched
-  nothing.
+- fix(types): `types` skips `node_modules`, except by a `types.input` pattern that names it, and `types --watch`
+  watches the files `types` reads; it applied `extract.ignore`, which can list the translation files themselves (to
+  keep `extract` from parsing its TypeScript output), and then watched nothing.
 
 ## 1.95.3
 

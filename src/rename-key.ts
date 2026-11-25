@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import type { I18nextToolkitConfig, Logger, RenameKeyResult } from './types.js'
 import { ConsoleLogger } from './utils/logger.js'
 import { loadTranslationFile, serializeTranslationFile, getOutputPath, getNamespaceFromOutputPath } from './utils/file-utils.js'
-import { findWritableSourceFiles } from './utils/source-files.js'
+import { findSourceFiles, inNodeModules } from './utils/source-files.js'
 import { getNestedValue, setNestedValue, naturalLanguageRegexFor, storedKeySeparator } from './utils/nested-object.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 import { styleText } from 'node:util'
@@ -93,8 +93,27 @@ export async function runRenameKey (
 
   logger.info(`🔍 Scanning for usages of "${oldKey}"...`)
 
+  // The files extract reads keys from. Those in node_modules are not the project's code to rewrite, but
+  // extract would add the old key back from them (and drop the renamed one with its translations), so a key
+  // used there is not renamed at all.
+  const readFiles = await findSourceFiles(config)
+  const packageUsages: string[] = []
+  for (const file of readFiles.filter(inNodeModules)) {
+    const { changes } = await replaceKeyInSource(await readFile(file, 'utf-8'), oldParts, newParts, config, namespaceKeyMap)
+    if (changes > 0) packageUsages.push(file)
+  }
+  if (packageUsages.length > 0) {
+    return {
+      success: false,
+      sourceFiles: [],
+      translationFiles: [],
+      error: `"${oldKey}" is used in node_modules, which rename-key does not rewrite: ${packageUsages.join(', ')}. ` +
+        'extract reads these files, so it would add the old key back. Rename it in the package, or take the package out of extract.input.'
+    }
+  }
+
   // Find and update source files
-  const sourceResults = await updateSourceFiles(oldParts, newParts, config, dryRun, namespaceKeyMap, logger)
+  const sourceResults = await updateSourceFiles(readFiles.filter(f => !inNodeModules(f)), oldParts, newParts, config, dryRun, namespaceKeyMap, logger)
 
   // Update translation files
   const translationResults = await updateTranslationFiles(oldParts, newParts, config, dryRun, namespaceKeyMap, logger)
@@ -289,6 +308,7 @@ async function buildNamespaceKeyMap (config: I18nextToolkitConfig): Promise<Map<
 }
 
 async function updateSourceFiles (
+  sourceFiles: string[],
   oldParts: KeyParts,
   newParts: KeyParts,
   config: I18nextToolkitConfig,
@@ -296,9 +316,6 @@ async function updateSourceFiles (
   namespaceKeyMap: Map<string, Set<string>>,
   logger: Logger
 ): Promise<Array<{ path: string; changes: number }>> {
-  // The files extract reads keys from, except node_modules, which is not the project's code to rewrite
-  const sourceFiles = await findWritableSourceFiles(config)
-
   const results: Array<{ path: string; changes: number }> = []
 
   for (const file of sourceFiles) {

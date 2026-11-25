@@ -2,7 +2,6 @@
 
 import { Command } from 'commander'
 import chokidar from 'chokidar'
-import { minimatch } from 'minimatch'
 import { styleText } from 'node:util'
 import { loadConfig, ensureConfig } from './config.js'
 import { detectConfig } from './heuristic-config.js'
@@ -18,7 +17,7 @@ import { runRenameKey } from './rename-key.js'
 import { runInstrumenter } from './instrumenter/index.js'
 import { runLocalize } from './localize/index.js'
 import { getNestedKeys, getNestedValue } from './utils/nested-object.js'
-import { findSourceFiles, findTypesInputFiles, ignoreMatcher, sourceIgnore } from './utils/source-files.js'
+import { findSourceFiles, findTypesInputFiles, ignoreMatcher, sourceMatcher } from './utils/source-files.js'
 import type { I18nextToolkitConfig, TranslationResult } from './types.js'
 
 const program = new Command()
@@ -88,19 +87,19 @@ program
       // If in watch mode, set up the chokidar watcher
       if (options.watch) {
         console.log('\nWatching for changes...')
-        // What extract skips (node_modules unless an input pattern names it, extract.ignore), and
-        // the files it writes, so its own output does not trigger another run
-        const isIgnored = ignoreMatcher([...sourceIgnore(config), ...deriveOutputIgnore(config.extract.output)])
+        // The files extract reads, minus those it writes, so its own output does not trigger
+        // another run; and the folders that hold none of them, which are not watched
+        const { isSource: isInput, isSkippedFolder } = sourceMatcher(config, deriveOutputIgnore(config.extract.output))
         // Watch the static base folder of each input glob, not the files that exist at
         // startup, so files created later are extracted and deleted ones drop their keys.
-        const inputGlobs: string[] = toArray(config.extract.input).map((g: string) => g.replace(/^\.\//, ''))
-        const isInput = (file: string) => {
-          const f = file.replace(/\\/g, '/')
-          return inputGlobs.some(g => minimatch(f, g, { dot: true })) && !isIgnored(f)
-        }
+        // A negated pattern (`!**/node_modules/**`) reads nothing, so it has no folder to watch.
+        const inputGlobs: string[] = toArray(config.extract.input)
+          .filter((g: string) => !g.startsWith('!'))
+          .map((g: string) => g.replace(/^\.\//, ''))
 
         const watcher = chokidar.watch(Array.from(new Set(inputGlobs.flatMap(globBases))), {
-          ignored: (path, stats) => isIgnored(path) || (!!stats?.isFile() && !isInput(path)),
+          // chokidar may ask before it knows whether a path is a file: then it is tested as a folder
+          ignored: (path, stats) => stats?.isFile() ? !isInput(path) : isSkippedFolder(path),
           ignoreInitial: true,
           persistent: true,
         })
@@ -196,8 +195,8 @@ program
 
     if (options.watch) {
       console.log('\nWatching for changes...')
-      // The files the generator reads. extract.ignore is about source files: it often lists the
-      // translation files themselves, so extract does not parse them
+      // The files the generator reads; extract.ignore, which keeps extract from parsing e.g. its own
+      // TypeScript output, does not apply to them
       const watchTypes = await findTypesInputFiles(config.types?.input || [])
       // awaitWriteFinish avoids triggering mid-write when another process (e.g. `extract -w`)
       // is rewriting the same translation files. See i18next/i18next-cli#257.

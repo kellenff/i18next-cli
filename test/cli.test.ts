@@ -382,8 +382,44 @@ describe('CLI command parsing and dispatching', () => {
     expect(calledOptions.ignored('src/app.tsx', file)).toBe(false)
     expect(calledOptions.ignored('src/i18n/locales/en/namespace.ts', file)).toBe(true)
     expect(calledOptions.ignored('src/styles.css', file)).toBe(true)
-    expect(calledOptions.ignored('src/node_modules/x', dir)).toBe(true)
+    // only the working directory's node_modules is skipped, as for extract, and folders no input pattern reaches
+    expect(calledOptions.ignored('node_modules', dir)).toBe(true)
+    expect(calledOptions.ignored('lib', dir)).toBe(true)
     expect(calledOptions.ignored('src/i18n', dir)).toBe(false)
+  })
+
+  it('extract --watch descends into a folder an ignore pattern without /** names, as extract reads its files', async () => {
+    vi.resetModules()
+    const mockWatch = (await import('chokidar')).watch as any
+
+    process.argv = ['node', 'cli.ts', 'extract', '--watch']
+    mockEnsureConfig.mockResolvedValue({
+      locales: ['en'],
+      extract: {
+        input: ['src/**/*.tsx', '!**/node_modules/**'],
+        ignore: ['src/legacy', 'src/generated/*', 'src/old/**'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+      }
+    })
+    mockRunExtractor.mockResolvedValue({ anyFileUpdated: false, hasErrors: false })
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    const [watchedPaths, calledOptions] = mockWatch.mock.calls[0]
+    // a negated pattern reads nothing, so the project root is not watched for it
+    expect(watchedPaths).toEqual(['src'])
+    const file = { isFile: () => true }
+    const dir = { isFile: () => false }
+    expect(calledOptions.ignored('src/legacy', dir)).toBe(false)
+    expect(calledOptions.ignored('src/legacy/Old.tsx', file)).toBe(false)
+    expect(calledOptions.ignored('src/generated/api', dir)).toBe(false)
+    expect(calledOptions.ignored('src/generated/top.tsx', file)).toBe(true)
+    expect(calledOptions.ignored('src/generated/api/client.tsx', file)).toBe(false)
+    expect(calledOptions.ignored('src/old', dir)).toBe(true)
+    // chokidar may ask before it has stats
+    expect(calledOptions.ignored('src/old/x.tsx', undefined)).toBe(true)
+    expect(calledOptions.ignored('src/App.tsx', undefined)).toBe(false)
   })
 
   it('extract --watch follows node_modules when an input pattern names it, as extract does', async () => {
@@ -410,6 +446,9 @@ describe('CLI command parsing and dispatching', () => {
     expect(calledOptions.ignored('node_modules/@acme/ui/src', dir)).toBe(false)
     expect(calledOptions.ignored('node_modules/@acme/ui/src/Button.tsx', file)).toBe(false)
     expect(calledOptions.ignored('node_modules/other/index.tsx', file)).toBe(true)
+    // a package no pattern names is not watched
+    expect(calledOptions.ignored('node_modules/other', dir)).toBe(true)
+    expect(calledOptions.ignored('node_modules', dir)).toBe(false)
   })
 
   it('lint --watch watches the files lint reads: lint.ignore applies, node_modules when named', async () => {
@@ -444,6 +483,8 @@ describe('CLI command parsing and dispatching', () => {
 
     expect(mockWatch).toHaveBeenCalledTimes(1)
     expect(mockWatch.mock.calls[0][0]).toEqual(['node_modules/@acme/ui/src/Button.tsx', 'src/App.tsx'])
+    // no `ignored` option drops a listed file again
+    expect(mockWatch.mock.calls[0][1]?.ignored).toBeUndefined()
   })
 
   it('types --watch watches every types.input file, also those extract.ignore lists', async () => {
@@ -462,7 +503,7 @@ describe('CLI command parsing and dispatching', () => {
     await import('../src/cli')
     await new Promise(resolve => setImmediate(resolve))
 
-    expect(mockGlob).toHaveBeenCalledWith(['src/i18n/locales/en/*.ts'], expect.objectContaining({ ignore: ['**/node_modules/**'] }))
+    expect(mockGlob).toHaveBeenCalledWith(['src/i18n/locales/en/*.ts'], expect.objectContaining({ ignore: ['node_modules/**'] }))
     expect(mockWatch.mock.calls[0][0]).toEqual(['src/i18n/locales/en/translation.ts'])
   })
 
